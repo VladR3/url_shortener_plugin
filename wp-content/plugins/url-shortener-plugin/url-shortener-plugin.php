@@ -6,7 +6,8 @@ Version: 1.0
 Author: Vlad Raikovskyi
 */
 
-function url_shortener_register_post_type() {
+function url_shortener_register_post_type()
+{
     $labels = array(
         'name'               => 'Shortened URLs',
         'singular_name'      => 'Shortened URL',
@@ -38,42 +39,49 @@ function url_shortener_register_post_type() {
 }
 add_action('init', 'url_shortener_register_post_type');
 
-function url_shortener_add_meta_boxes() {
+function url_shortener_add_meta_boxes()
+{
     add_meta_box('original_url', 'Original URL', 'url_shortener_meta_box_callback', 'shortened_url', 'normal', 'high');
 }
 add_action('add_meta_boxes', 'url_shortener_add_meta_boxes');
 
-function url_shortener_meta_box_callback($post) {
+function url_shortener_meta_box_callback($post)
+{
     wp_nonce_field('save_original_url', 'original_url_nonce');
     $value = get_post_meta($post->ID, '_original_url', true);
     echo '<label for="original_url">Original URL: </label>';
     echo '<input type="url" id="original_url" name="original_url" value="' . esc_attr($value) . '" size="25" />';
 }
 
-/*function get_all_saved_urls() {
+function get_all_saved_urls()
+{
     $args = array(
         'post_type' => 'shortened_url',
         'posts_per_page' => -1,
+        'post_status' => array('any'),
+        'orderby' => 'post_date',
+        'order' => 'DESC'
     );
-    global $urls;
+    $urls = array();
+
     $query = new WP_Query($args);
 
-    if ($query->have_posts()) {
-        while ($query->have_posts()) {
-            $query->the_post();
-            $original_url = get_post_meta(get_the_ID(), '_original_url', true);
-            $short_url = get_post_meta(get_the_ID(), '_short_url', true);
-
-            $urls[$short_url] = $original_url;
-        }
-    } else {
-        echo '<p>No URLs found.</p>';
+    $posts = $query->posts;
+    foreach ($posts as $post) {
+        $post_id = $post->ID;
+        $original_url = get_field('_original_url', $post_id);
+        $short_url = get_field('_short_url', $post_id);
+        $urls[$short_url] = array(
+            'post_id' => $post_id,
+            'original_url' => $original_url
+        );
     }
-    //wp_reset_postdata();
-    return $urls;
-}*/
 
-function get_all_saved_urls(){
+    return $urls;
+}
+
+
+/*function get_all_saved_urls(){
     global $wpdb;
 
     $query = "SELECT pm1.post_id, pm1.meta_value AS short_url, pm2.meta_value AS original_url
@@ -93,19 +101,11 @@ function get_all_saved_urls(){
         }
     } 
     return $urls;
-}
+}*/
+//add_action('wp_loaded', 'get_all_saved_urls');
 
-add_action('wp_loaded', 'get_all_saved_urls');
-
-function url_shortener_save_post($post_id) {
-    if (!isset($_POST['original_url_nonce'])) {
-        return $post_id;
-    }
-
-    if (!wp_verify_nonce($_POST['original_url_nonce'], 'save_original_url')) {
-        return $post_id;
-    }
-
+function url_shortener_save_post($post_id)
+{
     if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) {
         return $post_id;
     }
@@ -125,19 +125,28 @@ function url_shortener_save_post($post_id) {
     }
 
     $original_url = sanitize_text_field($_POST['original_url']);
-    $short_url = get_short_url($original_url);
+    $short_url = generate_short_url();
 
     update_post_meta($post_id, '_original_url', $original_url);
     update_post_meta($post_id, '_short_url', $short_url);
 }
 add_action('save_post', 'url_shortener_save_post');
 
-function get_short_url($url){
-    $short_url = 'http://startprogectwp/' . url_shortener_generate_code() . '/';
-    return $short_url;
+function generate_short_url()
+{
+    $urls = get_all_saved_urls();
+    while (true) {
+        $generate_url = 'http://startprogectwp/redirect-page/' . url_shortener_generate_code() . '/';
+        if (isset($urls[$generate_url])) {
+            continue;
+        }
+        break;
+    }
+    return $generate_url;
 }
 
-function url_shortener_generate_code($length = 6) {
+function url_shortener_generate_code($length = 6)
+{
     $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
     $characters_length = strlen($characters);
     $random_string = '';
@@ -147,7 +156,8 @@ function url_shortener_generate_code($length = 6) {
     return $random_string;
 }
 
-function set_custom_edit_url_columns($columns) {
+function set_custom_edit_url_columns($columns)
+{
     $columns['original_url'] = 'Повна';
     $columns['short_url'] = 'Скорочена';
     return $columns;
@@ -156,15 +166,15 @@ add_filter('manage_shortened_url_posts_columns', 'set_custom_edit_url_columns');
 
 
 
-function custom_shortened_url_column($column, $post_id) {
-    switch ($column) 
-    {
-        case 'original_url' :
+function custom_shortened_url_column($column, $post_id)
+{
+    switch ($column) {
+        case 'original_url':
             $original_url = get_post_meta($post_id, '_original_url', true);
             echo $original_url;
             break;
 
-        case 'short_url' :
+        case 'short_url':
             $short_url = get_post_meta($post_id, '_short_url', true);
             echo $short_url;
             break;
@@ -172,16 +182,16 @@ function custom_shortened_url_column($column, $post_id) {
 }
 add_action('manage_shortened_url_posts_custom_column', 'custom_shortened_url_column', 10, 2);
 
-add_action('template_redirect', 'url_shortener_redirect_to_original_url');
-
-function url_shortener_redirect_to_original_url() {
-    $urls = get_all_saved_urls();
-    $requested_url = 'http://startprogectwp'.$_SERVER['REQUEST_URI'];
-    var_dump(isset($urls[$requested_url]));
-    if (isset($urls[$requested_url])) {
-        $original_url = $urls[$requested_url];
-        wp_redirect($original_url); 
-        exit;
+function url_shortener_redirect_to_original_url()
+{
+    if (strpos($_SERVER['REQUEST_URI'], '/redirect-page/') !== false) {
+        $urls = get_all_saved_urls();
+        $requested_url = 'http://startprogectwp' . $_SERVER['REQUEST_URI'];
+        if (isset($urls[$requested_url])) {
+            $original_url = $urls[$requested_url]['original_url'];
+            wp_redirect($original_url);
+            exit;
+        }
     }
 }
 add_action('template_redirect', 'url_shortener_redirect_to_original_url');
