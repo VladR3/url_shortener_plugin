@@ -106,7 +106,7 @@ function load_scripts()
         'bootstrap-js',
         'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js');
 
-    wp_enqueue_style('mystyle', get_template_directory_uri(). '/style.css');
+    wp_enqueue_style('mystyle', get_template_directory_uri(). '/css/main.css');
     
 }
 add_action('wp_enqueue_scripts', 'load_scripts');
